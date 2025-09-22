@@ -21,6 +21,8 @@ class CelebADataset(Dataset):
     def __len__(self):
         return len(self.filenames)
 
+# ...existing code...
+
     def __getitem__(self, idx):
         path = os.path.join(self.root, self.filenames[idx])
         img = Image.open(path).convert("RGB")
@@ -29,10 +31,12 @@ class CelebADataset(Dataset):
         _, h, w = img.shape
         pad_h = max(0, self.img_size - h)
         pad_w = max(0, self.img_size - w)
-        # 上下左右均匀填充
+        # 统一填充到目标尺寸
         padding = [pad_w // 2, pad_h // 2, pad_w - pad_w // 2, pad_h - pad_h // 2]
         pad_transform = T.Pad(padding=padding, fill=1)
         img = pad_transform(img)
+        # 强制裁剪到目标尺寸，保证所有图片都是 [C, img_size, img_size]
+        img = img[:, :self.img_size, :self.img_size]
 
         mask = inverse_rectangle_mask(self.img_size, self.img_size)
         white = torch.ones_like(img)
