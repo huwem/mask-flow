@@ -1,0 +1,9 @@
+batch_size: 32
+num_epochs: 50
+learning_rate: 0.001
+img_size: 64
+data_root: "data/celeba/img_align_celeba"
+model_save_path: "checkpoints/flow_inpaint.pth"
+results_dir: "results/"
+checkpoint_interval: 20
+device: "cuda"
