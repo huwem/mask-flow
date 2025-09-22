@@ -10,16 +10,16 @@ def save_inpainting_result(model, batch, mask, device, filename, num_steps=50, a
     mask = mask.to(device)
     B, C, H, W = x_true.shape
 
-    # 初始化为标准正态分布噪声
-    x = torch.randn_like(x_true).to(device)
+    # 初始化为带掩码的输入
+    x = x_cond.clone().to(device)
     
     with torch.no_grad():
         for i in range(num_steps, 0, -1):
-            t = torch.full((B,), i / num_steps, device=device)
+            t = torch.full((B,), i / num_steps, device=device)  
             continuous_mask = generate_continuous_mask(mask, t, alpha=alpha)
             xt = continuous_mask * x_true + (1 - continuous_mask) * x
             vt = model(xt, t, x_cond)
-            x = x + vt * (1.0 / num_steps)  # 欧拉法
+            x = x + vt * (1.0 / num_steps)
 
     pred = x.cpu()
     x_cond_np = (x_cond.cpu() + 1) / 2

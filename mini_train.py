@@ -92,6 +92,7 @@ def main():
             # 在第一个epoch保存验证样本
             if epoch == 0 and val_sample is None:
                 val_sample = (masked[:4].clone(), clean[:4].clone())
+                val_mask = mask[:4].clone()
             
             # 检查输入是否有效
             if torch.isnan(masked).any() or torch.isnan(clean).any():
@@ -167,7 +168,7 @@ def main():
                     save_inpainting_result(
                         model,
                         (masked[:4], clean[:4]),
-                        mask,
+                        mask[:4],
                         device,
                         f"{config['results_dir']}/epoch_{epoch+1}.png"
                     )
@@ -179,6 +180,7 @@ def main():
                         save_inpainting_result(
                             model,
                             (val_masked, val_clean),
+                            val_mask,
                             device,
                             f"{config['results_dir']}/fixed_sample_epoch_{epoch+1}.png"
                         )
