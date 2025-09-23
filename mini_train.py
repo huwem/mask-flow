@@ -16,7 +16,7 @@ def main():
     with open("config/config.yaml", 'r') as f:
         config = yaml.safe_load(f)
     
-    # 修改配置：设置epoch数为100
+    # 修改配置：设置epoch数为200
     config['num_epochs'] = 200
 
     # 设置设备
@@ -37,7 +37,7 @@ def main():
     print("Loading dataset...")
     try:
         full_dataset = CelebADataset(config['data_root'], img_size=config['img_size'])
-        # 只使用前2000张图片
+        # 只使用前200张图片
         dataset = Subset(full_dataset, range(min(200, len(full_dataset))))
         print(f"Dataset loaded with {len(dataset)} samples (limited to first 2000)")
     except Exception as e:
