@@ -1,8 +1,7 @@
 import torch
 import matplotlib.pyplot as plt
-from utils.flow_utils import linear_growth_mask
 
-def save_inpainting_result(model, batch, mask, device, filename, num_steps=50):
+def save_inpainting_result(model, batch, mask, device, filename, num_steps=10):
     model.eval()
     x_cond, x_true = batch
     x_cond = x_cond.to(device)
@@ -10,28 +9,38 @@ def save_inpainting_result(model, batch, mask, device, filename, num_steps=50):
     mask = mask.to(device)
     B, C, H, W = x_true.shape
 
-    # 初始化为带掩码的输入（这是推理的起点）
-    x = x_cond.clone().to(device)
+    # 为每张图像单独处理
+    preds = []
     
     with torch.no_grad():
-        for i in range(num_steps, 0, -1):
-            t = torch.full((B,), i / num_steps, device=device)
+        for b in range(B):  # 对batch中的每张图像单独处理
+            # 取出单张图像
+            x_cond_single = x_cond[b:b+1]  # 保持batch维度 [1, C, H, W]
+            x_true_single = x_true[b:b+1]
             
-            # 在推理过程中，我们不能使用 x_true，应该只使用当前的 x 和 mask
-            # xt 应该是当前状态 x，而不是基于 x_true 计算的
-            xt = x  # 当前状态就是 xt
+            # 初始化 x 为标准高斯噪声
+            x = torch.randn_like(x_cond_single, device=device)
             
-            # 预测速度场
-            vt = model(xt, t, x_cond)
-            
-            # 更新 x（欧拉步进）
-            x = x + vt * (1.0 / num_steps)
-            
-            # 应用掩码约束：保持已知区域不变
-            # 在已知区域（mask=1），保持 x_cond 的值不变
-            x = mask * x_cond + (1 - mask) * x
+            # 流匹配模型从 t=0 到 t=1 进行积分
+            for i in range(num_steps):
+                # 时间从 0 到 1 均匀分布 (单个时间值)
+                t = torch.full((1,), i / num_steps, device=device)
 
-    pred = x.cpu()
+                xt = x  # 当前状态就是 xt
+                
+                # 预测速度场 (使用masked_img作为条件)
+                vt = model(xt, t, x_cond_single)
+
+                # 前向欧拉积分步长
+                dt = 1.0 / num_steps
+                x = x + vt * dt
+            
+            preds.append(x)
+    
+    # 合并所有预测结果
+    pred = torch.cat(preds, dim=0)
+
+    pred = pred.cpu()
     x_cond_np = (x_cond.cpu() + 1) / 2
     pred_np = (pred + 1) / 2
     true_np = (x_true.cpu() + 1) / 2

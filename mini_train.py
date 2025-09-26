@@ -17,7 +17,7 @@ def main():
         config = yaml.safe_load(f)
     
     # 修改配置：设置epoch数为200
-    config['num_epochs'] = 200
+    config['num_epochs'] = 2000
 
     # 设置设备
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -33,13 +33,13 @@ def main():
     # 记录配置信息
     writer.add_text('Config', str(config))
 
-    # 创建数据集和数据加载器（只使用前2000张图片）
+    # 创建数据集和数据加载器
     print("Loading dataset...")
     try:
         full_dataset = CelebADataset(config['data_root'], img_size=config['img_size'])
-        # 只使用前200张图片
-        dataset = Subset(full_dataset, range(min(200, len(full_dataset))))
-        print(f"Dataset loaded with {len(dataset)} samples (limited to first 2000)")
+        # 只使用前256张图片
+        dataset = Subset(full_dataset, range(min(256, len(full_dataset))))
+        print(f"Dataset loaded with {len(dataset)} samples ")
     except Exception as e:
         print(f"Failed to load dataset: {e}")
         return
@@ -54,7 +54,7 @@ def main():
 
     # 初始化模型
     print("Initializing model...")
-    model = ConditionalUNet(in_channels=3, width=config.get('model_width', 64))
+    model = ConditionalUNet(in_channels=3, width=config.get('model_width', 128))
     model = model.to(device)
     print(f"Model device: {next(model.parameters()).device}")
     
@@ -139,18 +139,10 @@ def main():
             # 记录学习率
             current_lr = optimizer.param_groups[0]['lr']
             
-            # 写入TensorBoard
-            writer.add_scalar('Epoch/Loss', avg_loss, epoch)
-            writer.add_scalar('Epoch/Learning_Rate', current_lr, epoch)
             
-            scheduler.step()
-            print(f"Epoch [{epoch+1}/{config['num_epochs']}], Average Loss: {avg_loss:.4f}, LR: {current_lr:.6f}")
-        else:
-            print(f"Epoch [{epoch+1}/{config['num_epochs']}], No valid batches processed")
-            continue
 
-        # 定期保存检查点和可视化结果（每10个epoch保存一次）
-        if (epoch + 1) % 10 == 0:
+        # 定期保存检查点和可视化结果（每100个epoch保存一次）
+        if (epoch + 1) % 100 == 0:
             # 保存模型检查点
             checkpoint_path = f"checkpoints/model_epoch_{epoch+1}.pth"
             torch.save({
@@ -204,24 +196,9 @@ def main():
     except Exception as e:
         print(f"Failed to save final model: {e}")
 
-    # 绘制损失曲线并保存
-    if train_losses:
-        plt.figure(figsize=(10, 5))
-        plt.plot(train_losses)
-        plt.title('Training Loss')
-        plt.xlabel('Epoch')
-        plt.ylabel('Loss')
-        plt.grid(True)
-        plt.savefig('training_loss.png')
-        plt.close()
+
         
-        # 将最终损失曲线添加到TensorBoard
-        if os.path.exists('training_loss.png'):
-            loss_image = plt.imread('training_loss.png')
-            writer.add_image('Final Loss Curve', 
-                           np.transpose(loss_image, (2, 0, 1)), 
-                           0, 
-                           dataformats='CHW')
+
     
     writer.close()
     print("Training completed and TensorBoard logs saved.")

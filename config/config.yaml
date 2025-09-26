@@ -1,7 +1,7 @@
-batch_size: 16
+batch_size: 32
 num_epochs: 50
-learning_rate: 0.001
-img_size: 64
+learning_rate: 0.002
+img_size: 256
 data_root: "data/celeba/img_align_celeba"
 model_save_path: "checkpoints/flow_inpaint.pth"
 results_dir: "results/"

@@ -1,6 +1,6 @@
 # train.py
 import torch
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Subset
 from models.conditional_unet import ConditionalUNet
 from datasets.celeba_dataset import CelebADataset
 from utils.flow_utils import flow_matching_loss
@@ -15,6 +15,9 @@ def main():
     # 加载配置
     with open("config/config.yaml", 'r') as f:
         config = yaml.safe_load(f)
+    
+    # 修改配置：设置epoch数为正常规模(200 epochs)
+    config['num_epochs'] = 200
 
     # 设置设备
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -30,11 +33,13 @@ def main():
     # 记录配置信息
     writer.add_text('Config', str(config))
 
-    # 创建数据集和数据加载器
+    # 创建数据集和数据加载器（使用完整数据集）
     print("Loading dataset...")
     try:
-        dataset = CelebADataset(config['data_root'], img_size=config['img_size'])
-        print(f"Dataset loaded with {len(dataset)} samples")
+        full_dataset = CelebADataset(config['data_root'], img_size=config['img_size'])
+        # 使用完整数据集而不是仅前200张图片
+        dataset = full_dataset
+        print(f"Dataset loaded with {len(dataset)} samples ")
     except Exception as e:
         print(f"Failed to load dataset: {e}")
         return
@@ -80,13 +85,14 @@ def main():
         num_batches = 0
         
         # 遍历所有batch
-        for i, (masked, _, clean) in enumerate(dataloader):
+        for i, (masked, mask, clean) in enumerate(dataloader):
             # 确保所有张量都在相同设备上
-            masked, clean = masked.to(device, non_blocking=True), clean.to(device, non_blocking=True)
-            
+            masked, clean, mask = masked.to(device, non_blocking=True), clean.to(device, non_blocking=True), mask.to(device, non_blocking=True)
+
             # 在第一个epoch保存验证样本
             if epoch == 0 and val_sample is None:
                 val_sample = (masked[:4].clone(), clean[:4].clone())
+                val_mask = mask[:4].clone()
             
             # 检查输入是否有效
             if torch.isnan(masked).any() or torch.isnan(clean).any():
@@ -95,7 +101,7 @@ def main():
                 
             try:
                 # 计算流匹配损失
-                loss = flow_matching_loss(model, clean, masked)
+                loss = flow_matching_loss(model, clean, masked, mask=mask)
                 
                 # 检查损失是否有效
                 if torch.isnan(loss) or torch.isinf(loss):
@@ -133,18 +139,12 @@ def main():
             # 记录学习率
             current_lr = optimizer.param_groups[0]['lr']
             
-            # 写入TensorBoard
+            # 记录epoch级别的损失和学习率
             writer.add_scalar('Epoch/Loss', avg_loss, epoch)
             writer.add_scalar('Epoch/Learning_Rate', current_lr, epoch)
-            
-            scheduler.step()
-            print(f"Epoch [{epoch+1}/{config['num_epochs']}], Average Loss: {avg_loss:.4f}, LR: {current_lr:.6f}")
-        else:
-            print(f"Epoch [{epoch+1}/{config['num_epochs']}], No valid batches processed")
-            continue
 
-        # 定期保存检查点和可视化结果
-        if (epoch + 1) % config.get('save_interval', 10) == 0:
+        # 定期保存检查点和可视化结果（每50个epoch保存一次）
+        if (epoch + 1) % 20 == 0:
             # 保存模型检查点
             checkpoint_path = f"checkpoints/model_epoch_{epoch+1}.pth"
             torch.save({
@@ -162,6 +162,7 @@ def main():
                     save_inpainting_result(
                         model,
                         (masked[:4], clean[:4]),
+                        mask[:4],
                         device,
                         f"{config['results_dir']}/epoch_{epoch+1}.png"
                     )
@@ -173,6 +174,7 @@ def main():
                         save_inpainting_result(
                             model,
                             (val_masked, val_clean),
+                            val_mask,
                             device,
                             f"{config['results_dir']}/fixed_sample_epoch_{epoch+1}.png"
                         )
@@ -196,25 +198,6 @@ def main():
     except Exception as e:
         print(f"Failed to save final model: {e}")
 
-    # 绘制损失曲线并保存
-    if train_losses:
-        plt.figure(figsize=(10, 5))
-        plt.plot(train_losses)
-        plt.title('Training Loss')
-        plt.xlabel('Epoch')
-        plt.ylabel('Loss')
-        plt.grid(True)
-        plt.savefig('training_loss.png')
-        plt.close()
-        
-        # 将最终损失曲线添加到TensorBoard
-        if os.path.exists('training_loss.png'):
-            loss_image = plt.imread('training_loss.png')
-            writer.add_image('Final Loss Curve', 
-                           np.transpose(loss_image, (2, 0, 1)), 
-                           0, 
-                           dataformats='CHW')
-    
     writer.close()
     print("Training completed and TensorBoard logs saved.")
 
