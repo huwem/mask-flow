@@ -16,11 +16,11 @@ def main():
     with open("config/config.yaml", 'r') as f:
         config = yaml.safe_load(f)
     
-    # 修改配置：设置epoch数为200
-    config['num_epochs'] = 2000
+    # 修改配置：设置epoch数为更小值以避免资源耗尽
+    config['num_epochs'] = 200
 
-    # 设置设备
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    # 设置设备 - 使用单GPU或CPU
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")  # 指定单卡
     print(f"Using device: {device}")
     
     # 创建必要的目录
@@ -37,8 +37,8 @@ def main():
     print("Loading dataset...")
     try:
         full_dataset = CelebADataset(config['data_root'], img_size=config['img_size'])
-        # 只使用前256张图片
-        dataset = Subset(full_dataset, range(min(256, len(full_dataset))))
+        # 只使用前32张图片以减少资源消耗
+        dataset = Subset(full_dataset, range(min(8000, len(full_dataset))))
         print(f"Dataset loaded with {len(dataset)} samples ")
     except Exception as e:
         print(f"Failed to load dataset: {e}")
@@ -46,16 +46,16 @@ def main():
     
     dataloader = DataLoader(
         dataset, 
-        batch_size=config['batch_size'], 
+        batch_size=min(config['batch_size'], 32),  # 限制batch size
         shuffle=True, 
-        num_workers=4,
-        pin_memory=True  # 加速数据传输到GPU
+        num_workers=2,  # 减少数据加载线程数
+        pin_memory=True
     )
 
-    # 初始化模型
+    # 初始化模型 - 单卡训练不需要DataParallel
     print("Initializing model...")
-    model = ConditionalUNet(in_channels=3, width=config.get('model_width', 128))
-    model = model.to(device)
+    model = ConditionalUNet(in_channels=3, width=config.get('model_width', 64))  # 减小模型宽度
+    model = model.to(device)  # 直接移到设备上，不使用DataParallel
     print(f"Model device: {next(model.parameters()).device}")
     
     # 设置优化器和学习率调度器
@@ -77,6 +77,7 @@ def main():
     
     # 固定一批验证样本用于可视化
     val_sample = None
+    val_mask = None
 
     # 训练循环
     for epoch in range(config['num_epochs']):
@@ -101,7 +102,7 @@ def main():
                 
             try:
                 # 计算流匹配损失
-                loss = flow_matching_loss(model, clean, masked, mask=mask)
+                loss = flow_matching_loss(model, clean, masked)
                 
                 # 检查损失是否有效
                 if torch.isnan(loss) or torch.isinf(loss):
@@ -122,13 +123,14 @@ def main():
                 # 记录每个batch的损失
                 writer.add_scalar('Batch/Loss', loss.item(), epoch * len(dataloader) + i)
                 
-                # 打印进度
-                if (i + 1) % 10 == 0:
+                # 打印进度（每5个batch打印一次以节省输出）
+                if (i + 1) % 5 == 0:
                     print(f"  Epoch [{epoch+1}/{config['num_epochs']}], Batch [{i+1}/{len(dataloader)}], Loss: {loss.item():.4f}")
                     
             except RuntimeError as e:
                 print(f"Error in batch {i}: {e}")
                 print("Skipping this batch...")
+                torch.cuda.empty_cache()  # 清理显存
                 continue
 
         # 计算平均损失
@@ -136,13 +138,18 @@ def main():
             avg_loss = total_loss / num_batches
             train_losses.append(avg_loss)
             
-            # 记录学习率
+            # 记录epoch级别损失和学习率
+            writer.add_scalar('Epoch/Loss', avg_loss, epoch)
             current_lr = optimizer.param_groups[0]['lr']
+            writer.add_scalar('Epoch/Learning_Rate', current_lr, epoch)
             
+            # 更新学习率
+            scheduler.step()
             
+            print(f"Epoch [{epoch+1}/{config['num_epochs']}] completed. Avg Loss: {avg_loss:.4f}")
 
-        # 定期保存检查点和可视化结果（每100个epoch保存一次）
-        if (epoch + 1) % 100 == 0:
+        # 定期保存检查点和可视化结果（每50个epoch保存一次）
+        if (epoch + 1) % 20 == 0:
             # 保存模型检查点
             checkpoint_path = f"checkpoints/model_epoch_{epoch+1}.pth"
             torch.save({
@@ -150,10 +157,12 @@ def main():
                 'model_state_dict': model.state_dict(),
                 'optimizer_state_dict': optimizer.state_dict(),
                 'loss': avg_loss,
+                'config': config
             }, checkpoint_path)
             print(f"Checkpoint saved to {checkpoint_path}")
             
             # 生成可视化结果
+            model.eval()  # 切换到评估模式
             with torch.no_grad():
                 try:
                     # 保存当前batch的可视化结果
@@ -166,7 +175,7 @@ def main():
                     )
                     
                     # 保存固定样本的可视化结果，便于比较训练过程
-                    if val_sample is not None:
+                    if val_sample is not None and val_mask is not None:
                         val_masked, val_clean = val_sample
                         val_masked, val_clean = val_masked.to(device), val_clean.to(device)
                         save_inpainting_result(
@@ -177,16 +186,15 @@ def main():
                             f"{config['results_dir']}/fixed_sample_epoch_{epoch+1}.png"
                         )
                     
-                    # 将图像结果添加到TensorBoard
-                    if os.path.exists(f"{config['results_dir']}/epoch_{epoch+1}.png"):
-                        result_image = plt.imread(f"{config['results_dir']}/epoch_{epoch+1}.png")
-                        writer.add_image('Training Results', 
-                                       np.transpose(result_image, (2, 0, 1)), 
-                                       epoch, 
-                                       dataformats='CHW')
+                    
                                        
                 except Exception as e:
                     print(f"Failed to save visualization: {e}")
+            model.train()  # 恢复训练模式
+
+        # 显存清理
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
 
     # 保存最终模型
     try:
@@ -196,10 +204,6 @@ def main():
     except Exception as e:
         print(f"Failed to save final model: {e}")
 
-
-        
-
-    
     writer.close()
     print("Training completed and TensorBoard logs saved.")
 
