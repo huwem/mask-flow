@@ -2,17 +2,9 @@
 import torch
 import random
 
-def random_rectangle_mask(H=256, W=256, max_size=0.4):
-    mask = torch.ones(1, H, W)
-    h, w = int(H * max_size), int(W * max_size)
-    rh = random.randint(0, H - h)
-    rw = random.randint(0, W - w)
-    mask[0, rh:rh+h, rw:rw+w] = 0
-    return mask
-
-def inverse_rectangle_mask(H=256, W=256, min_visible_ratio=0.6, max_visible_ratio=0.7):
+def inverse_rectangle_mask(H, W, min_visible_ratio=0.15, max_visible_ratio=0.4):
     """
-    创建反向遮罩：遮住大部分图片，只留下单块区域可见
+    创建反向遮罩：遮住大部分图片，只在中间四分之一区域留下单块可见区域
     
     Args:
         H, W: 图像高度和宽度
@@ -27,9 +19,20 @@ def inverse_rectangle_mask(H=256, W=256, min_visible_ratio=0.6, max_visible_rati
     visible_h = int(H * visible_ratio)
     visible_w = int(W * visible_ratio)
     
-    # 随机确定可见区域位置
-    rh = random.randint(0, H - visible_h)
-    rw = random.randint(0, W - visible_w)
+    # 定义中间四分之一区域的边界
+    # 中心区域为图像中心的四分之一
+    center_h_start = H // 4
+    center_h_end = 3 * H // 4
+    center_w_start = W // 4
+    center_w_end = 3 * W // 4
+    
+    # 确保可见区域不会超出中心区域
+    visible_h = min(visible_h, center_h_end - center_h_start)
+    visible_w = min(visible_w, center_w_end - center_w_start)
+    
+    # 在中心四分之一区域内随机确定可见区域位置
+    rh = random.randint(center_h_start, center_h_end - visible_h)
+    rw = random.randint(center_w_start, center_w_end - visible_w)
     
     # 在遮罩中设置可见区域为1（不遮挡）
     mask[0, rh:rh+visible_h, rw:rw+visible_w] = 1
