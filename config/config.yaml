@@ -1,8 +1,8 @@
 batch_size: 64
 num_epochs: 200
-learning_rate: 0.002
+learning_rate: 0.001
 img_size: 256
-data_root: "data/celeba/img_align_celeba"
+data_root: "data/mapdata_processed/"
 model_save_path: "checkpoints/seed_${seed}/flow_inpaint.pth"
 results_dir: "results/seed_${seed}/"
 tensorboard_log_dir: "runs/flow_inpaint_training_seed_${seed}"
