@@ -90,7 +90,7 @@ def main_worker(gpu, ngpus_per_node, config):
     sampler = DistributedSampler(dataset, num_replicas=ngpus_per_node, rank=gpu)
     
     # 根据GPU数量调整batch size
-    base_batch_size = min(config['batch_size'], 16)
+    base_batch_size = min(config['batch_size'], 24)
     effective_batch_size = base_batch_size * ngpus_per_node
     
     dataloader = DataLoader(

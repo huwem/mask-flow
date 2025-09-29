@@ -1,6 +1,6 @@
 batch_size: 64
 num_epochs: 200
-learning_rate: 0.001
+learning_rate: 0.002
 img_size: 256
 data_root: "data/mapdata_processed/"
 model_save_path: "checkpoints/seed_${seed}/flow_inpaint.pth"
