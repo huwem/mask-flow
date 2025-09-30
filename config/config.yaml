@@ -1,11 +1,32 @@
+# config/config.yaml
+# 数据相关配置
 batch_size: 64
-num_epochs: 200
-learning_rate: 0.002
+num_epochs: 2000
+learning_rate: 0.0002
 img_size: 256
-data_root: "data/mapdata_processed/"
+#data_root: "data/mapdata_processed/" 
+data_root: "data/celeba/img_align_celeba"
+max_dataset_size: 8000
+
+# 模型相关配置
+model_width: 32
+in_channels: 3
+
+# 训练相关配置
+weight_decay: 0.0001
+seed: 42
+
+# 路径配置
 model_save_path: "checkpoints/seed_${seed}/flow_inpaint.pth"
 results_dir: "results/seed_${seed}/"
 tensorboard_log_dir: "runs/flow_inpaint_training_seed_${seed}"
 checkpoint_interval: 20
+
+# 学习率调度器配置
+scheduler: "cosine"  # 可选: cosine, step
+step_size: 20        # 仅在使用step scheduler时有效
+gamma: 0.5           # 仅在使用step scheduler时有效
+
+# 其他配置
 device: "cuda"
-seed: 42
+num_workers: 4

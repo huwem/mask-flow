@@ -5,6 +5,7 @@ import torch.nn.functional as F
 class ConvBlock(nn.Module):
     """基础卷积块：Conv2d + GELU"""
     def __init__(self, in_channels, out_channels):
+        super().__init__()
         self.conv = nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1)
         self.act = nn.GELU()
 
